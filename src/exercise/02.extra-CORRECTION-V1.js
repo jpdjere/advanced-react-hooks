@@ -31,70 +31,77 @@ function reducer(state, action) {
   }
 }
 
-// 🐨 move both the useReducer and useEffect hooks to a custom hook called useAsync
-// here's how you use it:
-// const state = useAsync(
-//   () => {
-//     if (!pokemonName) {
-//       return
-//     }
-//     return fetchPokemon(pokemonName)
-//   },
-//   {status: pokemonName ? 'pending' : 'idle'},
-//   [pokemonName],
-// )
-// 🐨 so your job is to create a useAsync function that makes this work.
-const useAsync = (asyncCallback, initialStatus, dependencies) => {
-  const [state, dispatch] = React.useReducer(reducer, {
+const useAsync = (initialStatus) => {
+  // 1. Rename dispatch to unsafeDispatch as it is unsafe: might cause an error
+  // if component is unmounted before a dispatch is executed. This unsafe dispatch
+  // will trigger a re-render even if the component is not mounted.
+  const [state, unsafeDispatch] = React.useReducer(reducer, {
     data: null,
     error: null,
     status: 'idle',
     ...initialStatus,
   })
 
-  React.useEffect(() => {
-    // 💰 this first early-exit bit is a little tricky, so let me give you a hint:
-    // const promise = asyncCallback()
-    // if (!promise) {
-    //   return
-    // }
-    // then you can dispatch and handle the promise etc...
-    const promise = asyncCallback();
-    if(!promise) {
-      return;
+  // 2. Create a wrapper function for unsafeDispatch with useCallback, passing down 
+  // all arguments as provided. No dependencies are required because unsafeDispatch
+  // is stable, as it is being returned by useReducer.
+  const dispatch = React.useCallback((...args) => {
+    // 6. Check if the component is mounted to know if it safe to called dispatch.
+    if(mountedRef.current) {
+      unsafeDispatch(...args)
     }
+  }, [])
+  // 3. Now we have to make sure that this function is not fired if our component
+  // has been unmounted.
 
-    dispatch({type: 'pending'})
-    promise.then(
-      data => {
-        dispatch({type: 'resolved', data})
-      },
-      error => {
-        dispatch({type: 'rejected', error})
-      },
-    )
-    // 🐨 you'll accept dependencies as an array and pass that here.
-    // 🐨 because of limitations with ESLint, you'll need to ignore
-    // the react-hooks/exhaustive-deps rule. We'll fix this in an extra credit.
-  }, dependencies)
+  // 4. For that we'll create a mountedRef value using useRef with an initial
+  // value of false.
+  const mountedRef = React.useRef(false);
 
-  return state;
+  // 5. Now we'll set that value to true when the component is actually mounted.
+  // On top of that, we'll return a cleanup function that will get called when 
+  // the component is unmounted so we set the value to false.
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    }
+  })
+
+  const run = React.useCallback(
+    promise => {
+      if(!promise) {
+        return;
+      }
+
+      dispatch({type: 'pending'})
+      promise.then(
+        data => {
+          dispatch({type: 'resolved', data})
+        },
+        error => {
+          dispatch({type: 'rejected', error})
+        },
+      )
+    },
+    [dispatch]
+  );
+
+
+  return {...state, run};
 }
 
 function PokemonInfo({pokemonName}) {
-  const state = useAsync(
-    () => {
-      if(!pokemonName) {
-        return
-      }
-      return fetchPokemon(pokemonName)
-    },
-    { status: pokemonName ? 'pending' : 'idle'},
-    [pokemonName]
-  )
+  const {data, status, error, run} = useAsync({
+    status: pokemonName ? 'pending' : 'idle',
+  })
 
-  // 🐨 this will change from "pokemon" to "data"
-  const {data, status, error} = state
+  React.useEffect(() => {
+    if (!pokemonName) {
+      return
+    }
+    run(fetchPokemon(pokemonName))
+  }, [pokemonName, run])
 
   if (status === 'idle' || !pokemonName) {
     return 'Submit a pokemon'

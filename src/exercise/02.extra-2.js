@@ -31,20 +31,7 @@ function reducer(state, action) {
   }
 }
 
-// 🐨 move both the useReducer and useEffect hooks to a custom hook called useAsync
-// here's how you use it:
-// const state = useAsync(
-//   () => {
-//     if (!pokemonName) {
-//       return
-//     }
-//     return fetchPokemon(pokemonName)
-//   },
-//   {status: pokemonName ? 'pending' : 'idle'},
-//   [pokemonName],
-// )
-// 🐨 so your job is to create a useAsync function that makes this work.
-const useAsync = (asyncCallback, initialStatus, dependencies) => {
+const useAsync = (initialStatus) => {
   const [state, dispatch] = React.useReducer(reducer, {
     data: null,
     error: null,
@@ -52,49 +39,49 @@ const useAsync = (asyncCallback, initialStatus, dependencies) => {
     ...initialStatus,
   })
 
-  React.useEffect(() => {
-    // 💰 this first early-exit bit is a little tricky, so let me give you a hint:
-    // const promise = asyncCallback()
-    // if (!promise) {
-    //   return
-    // }
-    // then you can dispatch and handle the promise etc...
-    const promise = asyncCallback();
-    if(!promise) {
-      return;
-    }
+  // 2. Then it's the "run" function that call dispatch to get it pending, and adds
+  // handlers for the resolved and rejected cases.
+  const run = React.useCallback(
+    promise => {
+      if(!promise) {
+        return;
+      }
 
-    dispatch({type: 'pending'})
-    promise.then(
-      data => {
-        dispatch({type: 'resolved', data})
-      },
-      error => {
-        dispatch({type: 'rejected', error})
-      },
-    )
-    // 🐨 you'll accept dependencies as an array and pass that here.
-    // 🐨 because of limitations with ESLint, you'll need to ignore
-    // the react-hooks/exhaustive-deps rule. We'll fix this in an extra credit.
-  }, dependencies)
+      dispatch({type: 'pending'})
+      promise.then(
+        data => {
+          dispatch({type: 'resolved', data})
+        },
+        error => {
+          dispatch({type: 'rejected', error})
+        },
+      )
+    },
+    // 3. React requires no additional dependencies here: we are using dispatch but that
+    // is coming from React.useReducer and React knows that dispatch will never change.
+    // The other variable that we are using here is promise, but we are accepting that as
+    // an argument, so that won't be a dependency that can change either.
+    []
+  );
 
-  return state;
+
+  return {...state, run};
 }
 
 function PokemonInfo({pokemonName}) {
-  const state = useAsync(
-    () => {
-      if(!pokemonName) {
-        return
-      }
-      return fetchPokemon(pokemonName)
-    },
-    { status: pokemonName ? 'pending' : 'idle'},
-    [pokemonName]
-  )
+  const {data, status, error, run} = useAsync({
+    status: pokemonName ? 'pending' : 'idle',
+  })
 
-  // 🐨 this will change from "pokemon" to "data"
-  const {data, status, error} = state
+  // 1. We now create a "run" memoized function inside useAsync and force the user
+  // to use that function when they want their asynchronous callback run, passing only 
+  // the promise we get from running "fetchPokemon" with its argument.
+  React.useEffect(() => {
+    if (!pokemonName) {
+      return
+    }
+    run(fetchPokemon(pokemonName))
+  }, [pokemonName, run])
 
   if (status === 'idle' || !pokemonName) {
     return 'Submit a pokemon'

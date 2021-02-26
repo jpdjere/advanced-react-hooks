@@ -31,20 +31,7 @@ function reducer(state, action) {
   }
 }
 
-// 🐨 move both the useReducer and useEffect hooks to a custom hook called useAsync
-// here's how you use it:
-// const state = useAsync(
-//   () => {
-//     if (!pokemonName) {
-//       return
-//     }
-//     return fetchPokemon(pokemonName)
-//   },
-//   {status: pokemonName ? 'pending' : 'idle'},
-//   [pokemonName],
-// )
-// 🐨 so your job is to create a useAsync function that makes this work.
-const useAsync = (asyncCallback, initialStatus, dependencies) => {
+const useAsync = (asyncCallback, initialStatus) => {
   const [state, dispatch] = React.useReducer(reducer, {
     data: null,
     error: null,
@@ -53,11 +40,7 @@ const useAsync = (asyncCallback, initialStatus, dependencies) => {
   })
 
   React.useEffect(() => {
-    // 💰 this first early-exit bit is a little tricky, so let me give you a hint:
-    // const promise = asyncCallback()
-    // if (!promise) {
-    //   return
-    // }
+    // 💰  first early-exit
     // then you can dispatch and handle the promise etc...
     const promise = asyncCallback();
     if(!promise) {
@@ -73,27 +56,36 @@ const useAsync = (asyncCallback, initialStatus, dependencies) => {
         dispatch({type: 'rejected', error})
       },
     )
-    // 🐨 you'll accept dependencies as an array and pass that here.
-    // 🐨 because of limitations with ESLint, you'll need to ignore
-    // the react-hooks/exhaustive-deps rule. We'll fix this in an extra credit.
-  }, dependencies)
+  }, [asyncCallback])
 
   return state;
 }
 
 function PokemonInfo({pokemonName}) {
-  const state = useAsync(
+  // If I don't use useCallback here and use asyncCallback as dependency to the
+  // useEffect of the useAsync custom hook, asyncCallback will be redefined in
+  // every render and will cause useEffect to be triggered infinitely because
+  // the dependency will always be different, even if pokemonName does not change.
+  const asyncCallback = React.useCallback(
     () => {
       if(!pokemonName) {
         return
       }
       return fetchPokemon(pokemonName)
     },
-    { status: pokemonName ? 'pending' : 'idle'},
     [pokemonName]
-  )
+  );
+  // So useCallback will always return use the same function with pokemonName in
+  // its closure, until pokemonName. In that case, useCallback will return us a
+  // new function (different from what it was returning before) with a new
+  // new pokemonName in its closure.
 
-  // 🐨 this will change from "pokemon" to "data"
+  
+  const state = useAsync(
+    asyncCallback,
+    { status: pokemonName ? 'pending' : 'idle'}
+  );
+
   const {data, status, error} = state
 
   if (status === 'idle' || !pokemonName) {
